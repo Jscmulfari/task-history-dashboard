@@ -140,6 +140,14 @@
       font-weight: 600;
     }
 
+    .agent-runtime { display: grid; gap: 10px; margin-bottom: 14px; }
+    .agent-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: start; border: 1px solid var(--border); border-radius: 12px; padding: 10px; background: var(--surface-soft); }
+    .agent-row .meta { color: var(--muted); font-size: .78rem; margin-top: 4px; }
+    .online { color: #0d6f42; background: #def9ea; border-color: #8fe2b8; }
+    .offline { color: #7a3947; background: #ffe9ee; border-color: #ffbac8; }
+    html[data-theme="dark"] .online { color: #8ff9c6; background: rgba(18, 126, 81, .25); border-color: rgba(92, 234, 163, .55); }
+    html[data-theme="dark"] .offline { color: #ffb5c3; background: rgba(126, 42, 66, .3); border-color: rgba(255, 160, 180, .6); }
+
     .timeline { display: grid; gap: 12px; }
     .event { border: 1px solid var(--border); border-radius: 12px; padding: 12px; background: var(--surface-soft); }
     .time { font-size: 0.76rem; color: var(--muted); margin-bottom: 6px; font-weight: 600; }
@@ -200,7 +208,11 @@
       </article>
 
       <aside class="card panel">
-        <h2>Actividad reciente</h2>
+        <h2>Estado actual de agentes</h2>
+        <div class="agent-runtime" id="agent-runtime-list">
+          <article class="agent-row"><div><strong>desarrollador-1</strong><div class="meta">Cargando estado...</div></div><div><span class="badge warn">PENDIENTE</span></div></article>
+        </div>
+        <h2 style="margin-top:16px">Actividad reciente</h2>
         <div class="timeline" id="activity-timeline">
           <article class="event"><div class="time">Ahora</div><p>Esperando datos reales desde Supabase.</p></article>
         </div>
@@ -216,6 +228,7 @@
 
     const PAGE_SIZE = 20;
     let allRows = [];
+    let agentRows = [];
     let currentPage = 1;
 
     const kpiTotal = document.getElementById('kpi-total');
@@ -224,6 +237,7 @@
     const kpiErrors = document.getElementById('kpi-errors');
     const tbody = document.getElementById('activity-body');
     const timeline = document.getElementById('activity-timeline');
+    const agentRuntimeList = document.getElementById('agent-runtime-list');
     const prevBtn = document.getElementById('prev-page');
     const nextBtn = document.getElementById('next-page');
     const pageIndicator = document.getElementById('page-indicator');
@@ -304,6 +318,29 @@
       updatePaginationControls();
     };
 
+    const renderAgentRuntime = () => {
+      if (!agentRows.length) {
+        agentRuntimeList.innerHTML = '<article class="agent-row"><div><strong>Sin datos</strong><div class="meta">No hay registros en public.agent_runtime_status</div></div><div><span class="badge offline">OFFLINE</span></div></article>';
+        return;
+      }
+
+      agentRuntimeList.innerHTML = agentRows.slice(0, 12).map((r) => {
+        const online = !!r.online;
+        const normalized = normalizeStatus(r.work_status);
+        const updated = r.updated_at || null;
+        const task = r.task_name || 'Sin tarea';
+        const lastEvent = r.last_event || 'Sin evento reciente';
+        return '<article class="agent-row">'
+          + '<div><strong>' + (r.agent_id || 'agente') + '</strong>'
+          + '<div class="meta">' + task + '</div>'
+          + '<div class="meta">' + lastEvent + ' · ' + fmtRelative(updated) + '</div></div>'
+          + '<div style="display:grid;gap:6px;justify-items:end">'
+          + '<span class="badge ' + (online ? 'online' : 'offline') + '">' + (online ? 'ONLINE' : 'OFFLINE') + '</span>'
+          + '<span class="badge ' + normalized.className + '">' + normalized.label + '</span>'
+          + '</div></article>';
+      }).join('');
+    };
+
     const renderTimeline = () => {
       if (!allRows.length) {
         timeline.innerHTML = '<article class="event"><div class="time">Ahora</div><p>Sin actividad reciente.</p></article>';
@@ -363,10 +400,29 @@
 
       if (!resp.ok) throw new Error(`Supabase error ${resp.status}`);
       allRows = await resp.json();
-      currentPage = 1;
 
+      const agentEndpoint = `${SUPABASE_URL}/rest/v1/agent_runtime_status?select=agent_id,online,work_status,task_name,last_event,updated_at&order=updated_at.desc`;
+      const agentResp = await fetch(agentEndpoint, {
+        headers: {
+          apikey: SUPABASE_KEY,
+          Authorization: `Bearer ${SUPABASE_KEY}`,
+          Accept: 'application/json'
+        }
+      });
+      if (!agentResp.ok) throw new Error(`Supabase agent_runtime_status error ${agentResp.status}`);
+      const runtimeData = await agentResp.json();
+      const seen = new Set();
+      agentRows = runtimeData.filter((r) => {
+        const id = String(r.agent_id || '').trim();
+        if (!id || seen.has(id)) return false;
+        seen.add(id);
+        return true;
+      });
+
+      currentPage = 1;
       renderKpis();
       renderTable();
+      renderAgentRuntime();
       renderTimeline();
     }
 
@@ -378,6 +434,7 @@
       allRows = [];
       tbody.innerHTML = '<tr><td colspan="5" class="muted">Error cargando activity_log desde Supabase.</td></tr>';
       timeline.innerHTML = '<article class="event"><div class="time">Error</div><p>No fue posible recuperar la actividad.</p></article>';
+      agentRuntimeList.innerHTML = '<article class="agent-row"><div><strong>Error</strong><div class="meta">No fue posible cargar public.agent_runtime_status</div></div><div><span class="badge offline">OFFLINE</span></div></article>';
       kpiTotal.textContent = '0';
       kpiCompleted.textContent = '0';
       kpiProgress.textContent = '0';
