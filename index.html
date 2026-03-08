@@ -442,7 +442,7 @@
       const now = Date.now();
       const window24h = llmRows.filter((r) => {
         const ts = new Date(r.finished_at || r.created_at || r.updated_at || 0).getTime();
-        return ts && (now - ts) <= 24 * 60 * 60 * 1000;
+        return ts && ts <= now && ts >= (now - 24 * 60 * 60 * 1000);
       });
 
       if (!window24h.length) {
@@ -455,7 +455,7 @@
 
       const normalized = window24h.map((r) => ({
         run_id: r.run_id || r.id || 'run',
-        agent_id: (r.agent_id || r.actor || r.user_name || 'unknown').trim() || 'unknown',
+        agent_id: resolveAgentId(r),
         total_tokens: Number(r.total_tokens || r.tokens || 0),
         cost_usd: Number(r.estimated_cost_usd ?? r.cost_usd ?? r.cost ?? 0),
         ts: (r.finished_at || r.created_at || r.updated_at || null),
