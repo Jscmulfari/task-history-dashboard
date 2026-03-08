@@ -249,21 +249,20 @@
           <article class="alert">Cargando alertas…</article>
         </div>
         <h2>Consumo LLM</h2>
-        <div class="muted" id="llm-period-note" style="margin-bottom:8px">Período: últimas 24 horas</div>
         <div class="llm-kpis">
-          <article class="llm-kpi"><div class="k">Tokens totales (24h)</div><div class="v" id="llm-kpi-tokens">—</div></article>
-          <article class="llm-kpi"><div class="k">Costo USD (secundario)</div><div class="v" id="llm-kpi-cost">—</div></article>
+          <article class="llm-kpi"><div class="k">Tokens (24h)</div><div class="v" id="llm-kpi-tokens">—</div></article>
+          <article class="llm-kpi"><div class="k">Costo (24h)</div><div class="v" id="llm-kpi-cost">—</div></article>
         </div>
         <div class="llm-table">
           <table>
-            <thead><tr><th>#</th><th>Agente</th><th>Input</th><th>Output</th><th>Total</th></tr></thead>
-            <tbody id="llm-agent-body"><tr><td colspan="5" class="muted">Cargando consumo LLM…</td></tr></tbody>
+            <thead><tr><th>Agente</th><th>Tokens</th><th>Costo</th></tr></thead>
+            <tbody id="llm-agent-body"><tr><td colspan="3" class="muted">Cargando consumo LLM…</td></tr></tbody>
           </table>
         </div>
         <div class="llm-table">
           <table>
-            <thead><tr><th>Run reciente</th><th>Agente</th><th>Input</th><th>Output</th><th>Total</th></tr></thead>
-            <tbody id="llm-runs-body"><tr><td colspan="5" class="muted">Cargando runs…</td></tr></tbody>
+            <thead><tr><th>Run reciente</th><th>Agente</th><th>Tokens</th><th>Costo</th></tr></thead>
+            <tbody id="llm-runs-body"><tr><td colspan="4" class="muted">Cargando runs…</td></tr></tbody>
           </table>
         </div>
         <h2>Estado actual de agentes</h2>
@@ -327,10 +326,6 @@
     };
 
     const getRowDate = (r) => new Date(r.action_time || r.created_at || r.updated_at || r.timestamp || 0);
-    const resolveAgentId = (r) => {
-      const id = String(r.agent_id || r.actor || r.user_name || r.user_id || '').trim();
-      return id || 'UNKNOWN';
-    };
 
     const fmtRelative = (input) => {
       if (!input) return '—';
@@ -440,47 +435,58 @@
 
     const renderLlmUsage = () => {
       const now = Date.now();
-      const periodRows = llmRows.filter((r) => {
-        const ts = new Date(r.created_at || r.finished_at || 0).getTime();
-        return ts && ts <= now && ts >= (now - 24 * 60 * 60 * 1000);
+      const window24h = llmRows.filter((r) => {
+        const ts = new Date(r.finished_at || r.created_at || r.updated_at || 0).getTime();
+        return ts && (now - ts) <= 24 * 60 * 60 * 1000;
       });
 
-      if (!periodRows.length) {
+      if (!window24h.length) {
         llmKpiTokens.textContent = '0';
-        llmKpiCost.textContent = '$0.00';
-        llmAgentBody.innerHTML = '<tr><td colspan="5" class="muted">Sin consumo LLM en el período.</td></tr>';
-        llmRunsBody.innerHTML = '<tr><td colspan="5" class="muted">Sin runs recientes.</td></tr>';
+        llmKpiCost.textContent = '$0.0000';
+        llmAgentBody.innerHTML = '<tr><td colspan="3" class="muted">Sin consumo LLM en las últimas 24h.</td></tr>';
+        llmRunsBody.innerHTML = '<tr><td colspan="4" class="muted">Sin runs recientes.</td></tr>';
         return;
       }
 
-      const totalTokens = periodRows.reduce((acc, r) => acc + Number(r.total_tokens || r.tokens || 0), 0);
-      const totalCost = periodRows.reduce((acc, r) => acc + Number(r.estimated_cost_usd || r.cost_usd || r.cost || 0), 0);
+      const normalized = window24h.map((r) => ({
+        run_id: r.run_id || r.id || 'run',
+        agent_id: (r.agent_id || r.actor || r.user_name || 'unknown').trim() || 'unknown',
+        total_tokens: Number(r.total_tokens || r.tokens || 0),
+        cost_usd: Number(r.estimated_cost_usd ?? r.cost_usd ?? r.cost ?? 0),
+        ts: (r.finished_at || r.created_at || r.updated_at || null),
+      }));
+
+      const dedup = new Map();
+      normalized.forEach((r) => {
+        const k = `${r.agent_id}::${r.run_id}`;
+        if (!dedup.has(k)) dedup.set(k, r);
+      });
+      const rows = [...dedup.values()];
+
+      const totalTokens = rows.reduce((acc, r) => acc + r.total_tokens, 0);
+      const totalCost = rows.reduce((acc, r) => acc + r.cost_usd, 0);
       llmKpiTokens.textContent = totalTokens.toLocaleString('es-ES');
       llmKpiCost.textContent = `$${totalCost.toFixed(4)}`;
 
       const byAgent = new Map();
-      periodRows.forEach((r) => {
-        const agent = resolveAgentId(r);
-        if (!byAgent.has(agent)) byAgent.set(agent, { input: 0, output: 0, total: 0 });
-        const cur = byAgent.get(agent);
-        const input = Number(r.input_tokens || r.input_token || 0);
-        const output = Number(r.output_tokens || r.output_token || 0);
-        const total = Number(r.total_tokens || r.tokens || (input + output) || 0);
-        cur.input += input;
-        cur.output += output;
-        cur.total += total;
+      rows.forEach((r) => {
+        if (!byAgent.has(r.agent_id)) byAgent.set(r.agent_id, { tokens: 0, cost: 0, runs: 0 });
+        const cur = byAgent.get(r.agent_id);
+        cur.tokens += r.total_tokens;
+        cur.cost += r.cost_usd;
+        cur.runs += 1;
       });
 
-      const ranked = [...byAgent.entries()].sort((a, b) => b[1].total - a[1].total);
-      llmAgentBody.innerHTML = ranked.map(([agent, v], i) => `<tr><td>${i + 1}</td><td>${agent}</td><td>${v.input.toLocaleString('es-ES')}</td><td>${v.output.toLocaleString('es-ES')}</td><td><strong>${v.total.toLocaleString('es-ES')}</strong></td></tr>`).join('');
-      llmRunsBody.innerHTML = periodRows.slice(0, 8).map((r) => {
-        const run = r.run_id || r.id || 'run';
-        const agent = resolveAgentId(r);
-        const input = Number(r.input_tokens || r.input_token || 0);
-        const output = Number(r.output_tokens || r.output_token || 0);
-        const total = Number(r.total_tokens || r.tokens || (input + output) || 0);
-        return `<tr><td>${run}</td><td>${agent}</td><td>${input.toLocaleString('es-ES')}</td><td>${output.toLocaleString('es-ES')}</td><td>${total.toLocaleString('es-ES')}</td></tr>`;
-      }).join('');
+      llmAgentBody.innerHTML = [...byAgent.entries()]
+        .sort((a, b) => b[1].tokens - a[1].tokens)
+        .map(([agent, v]) => `<tr><td>${agent}</td><td>${v.tokens.toLocaleString('es-ES')}</td><td>$${v.cost.toFixed(4)}</td></tr>`)
+        .join('');
+
+      llmRunsBody.innerHTML = rows
+        .sort((a, b) => new Date(b.ts || 0) - new Date(a.ts || 0))
+        .slice(0, 8)
+        .map((r) => `<tr><td>${r.run_id}</td><td>${r.agent_id}</td><td>${r.total_tokens.toLocaleString('es-ES')}</td><td>$${r.cost_usd.toFixed(4)}</td></tr>`)
+        .join('');
     };
 
     const renderAgentRuntime = () => {
@@ -553,8 +559,8 @@
       alertsList.innerHTML = '<article class="alert">Cargando alertas…</article>';
       llmKpiTokens.textContent = '—';
       llmKpiCost.textContent = '—';
-      llmAgentBody.innerHTML = '<tr><td colspan="5" class="muted">Cargando consumo LLM…</td></tr>';
-      llmRunsBody.innerHTML = '<tr><td colspan="5" class="muted">Cargando runs…</td></tr>';
+      llmAgentBody.innerHTML = '<tr><td colspan="3" class="muted">Cargando consumo LLM…</td></tr>';
+      llmRunsBody.innerHTML = '<tr><td colspan="4" class="muted">Cargando runs…</td></tr>';
       agentRuntimeList.innerHTML = '<article class="agent-row"><div><strong>Cargando</strong><div class="meta">Consultando agent_runtime_status…</div></div><div><span class="badge warn">PENDIENTE</span></div></article>';
     };
 
@@ -591,14 +597,14 @@
       agentRows = runtimeData.filter((r) => { const id = String(r.agent_id || '').trim(); if (!id || seen.has(id)) return false; seen.add(id); return true; });
 
       let llmData = [];
-      const llmEndpoint = `${SUPABASE_URL}/rest/v1/agent_token_usage?select=run_id,agent_id,input_tokens,output_tokens,total_tokens,estimated_cost_usd,created_at&order=created_at.desc&limit=200`;
+      const llmEndpoint = `${SUPABASE_URL}/rest/v1/agent_token_usage?select=run_id,agent_id,total_tokens,input_tokens,output_tokens,estimated_cost_usd,finished_at,created_at,meta&order=finished_at.desc&limit=1000`;
       const llmResp = await fetch(llmEndpoint, { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, Accept: 'application/json' } });
       if (llmResp.ok) {
         llmData = await llmResp.json();
       } else {
         llmData = allRows
           .filter((r) => Number(r.total_tokens || r.tokens || 0) > 0 || Number(r.cost_usd || r.cost || 0) > 0)
-          .map((r) => ({ run_id: r.run_id || r.id, agent_id: r.actor || r.user_name, input_tokens: r.input_tokens || 0, output_tokens: r.output_tokens || 0, total_tokens: r.total_tokens || r.tokens || 0, estimated_cost_usd: r.estimated_cost_usd || r.cost_usd || r.cost || 0, created_at: r.action_time || r.created_at || r.updated_at }));
+          .map((r) => ({ run_id: r.run_id || r.id, agent_id: r.actor || r.user_name || 'unknown', total_tokens: r.total_tokens || r.tokens || 0, estimated_cost_usd: r.cost_usd || r.cost || 0, finished_at: r.action_time || r.created_at || r.updated_at }));
       }
       llmRows = llmData;
 
@@ -623,8 +629,8 @@
       alertsList.innerHTML = '<article class="alert">No fue posible calcular alertas visuales.</article>';
       llmKpiTokens.textContent = 'ERR';
       llmKpiCost.textContent = 'ERR';
-      llmAgentBody.innerHTML = '<tr><td colspan="5" class="muted">Error cargando consumo LLM.</td></tr>';
-      llmRunsBody.innerHTML = '<tr><td colspan="5" class="muted">Error cargando runs LLM.</td></tr>';
+      llmAgentBody.innerHTML = '<tr><td colspan="3" class="muted">Error cargando consumo LLM.</td></tr>';
+      llmRunsBody.innerHTML = '<tr><td colspan="4" class="muted">Error cargando runs LLM.</td></tr>';
       agentRuntimeList.innerHTML = '<article class="agent-row"><div><strong>Error</strong><div class="meta">No fue posible cargar public.agent_runtime_status</div></div><div><span class="badge offline">OFFLINE</span></div></article>';
       kpiTotal.textContent = 'ERR';
       kpiCompleted.textContent = 'ERR';

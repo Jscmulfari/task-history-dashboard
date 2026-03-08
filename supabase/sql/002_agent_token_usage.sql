@@ -23,3 +23,6 @@ create index if not exists idx_agent_token_usage_created_at
 
 create index if not exists idx_agent_token_usage_agent_created_at
   on public.agent_token_usage(agent_id, created_at desc);
+
+create index if not exists idx_agent_token_usage_finished_at
+  on public.agent_token_usage(finished_at desc);

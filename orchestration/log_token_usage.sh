@@ -4,14 +4,6 @@ set -euo pipefail
 # Upsert de consumo de tokens por corrida de agente en Supabase
 # Tabla: public.agent_token_usage
 # Idempotencia: on_conflict=(agent_id,run_id)
-#
-# Credenciales (ENV o args):
-#   SUPABASE_URL / --url
-#   SUPABASE_SERVICE_ROLE_KEY o SUPABASE_ANON_KEY / --key
-#
-# Uso:
-#   log_token_usage.sh --agent-id desarrollador-1 --run-id run-123 --input-tokens 120 --output-tokens 45 \
-#     --task-name "sync" --model "gpt-5" --status completed --estimated-cost-usd 0.00123
 
 SUPABASE_URL="${SUPABASE_URL:-}"
 SUPABASE_KEY="${SUPABASE_SERVICE_ROLE_KEY:-${SUPABASE_ANON_KEY:-}}"
@@ -26,7 +18,8 @@ ESTIMATED_COST_USD=""
 STATUS="completed"
 STARTED_AT=""
 FINISHED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
-META_JSON="{}"
+META_JSON='{}'
+COST_SOURCE="provider"
 
 usage() {
   cat <<'EOF'
@@ -35,8 +28,8 @@ Uso:
     --agent-id AGENT_ID --run-id RUN_ID \
     [--task-name TASK] [--model MODEL] \
     [--input-tokens N] [--output-tokens N] \
-    [--estimated-cost-usd DECIMAL] [--status STATUS] \
-    [--started-at ISO8601] [--finished-at ISO8601] [--meta-json JSON]
+    [--estimated-cost-usd DECIMAL] [--cost-source provider|computed|unknown] \
+    [--status STATUS] [--started-at ISO8601] [--finished-at ISO8601] [--meta-json JSON]
 EOF
 }
 
@@ -53,6 +46,7 @@ while [[ $# -gt 0 ]]; do
     --input-tokens) INPUT_TOKENS="$2"; shift 2 ;;
     --output-tokens) OUTPUT_TOKENS="$2"; shift 2 ;;
     --estimated-cost-usd) ESTIMATED_COST_USD="$2"; shift 2 ;;
+    --cost-source) COST_SOURCE="$2"; shift 2 ;;
     --status) STATUS="$2"; shift 2 ;;
     --started-at) STARTED_AT="$2"; shift 2 ;;
     --finished-at) FINISHED_AT="$2"; shift 2 ;;
@@ -70,6 +64,10 @@ if [[ -z "$AGENT_ID" || -z "$RUN_ID" ]]; then
   echo "Error: --agent-id y --run-id son obligatorios." >&2
   exit 1
 fi
+if [[ "$AGENT_ID" == "main" ]]; then
+  echo "Error: agent_id='main' no permitido para evitar agregación inválida. Use ID real o 'unknown'." >&2
+  exit 1
+fi
 if ! is_int "$INPUT_TOKENS" || ! is_int "$OUTPUT_TOKENS"; then
   echo "Error: --input-tokens y --output-tokens deben ser enteros >= 0." >&2
   exit 1
@@ -77,46 +75,57 @@ fi
 
 SUPABASE_URL="${SUPABASE_URL%/}"
 
-json_escape() {
-  local s="$1"
-  s=${s//\\/\\\\}
-  s=${s//\"/\\\"}
-  s=${s//$'\n'/\\n}
-  s=${s//$'\r'/\\r}
-  s=${s//$'\t'/\\t}
-  printf '%s' "$s"
+python3 - "$SUPABASE_URL" "$SUPABASE_KEY" "$AGENT_ID" "$RUN_ID" "$TASK_NAME" "$MODEL" "$INPUT_TOKENS" "$OUTPUT_TOKENS" "$ESTIMATED_COST_USD" "$STATUS" "$STARTED_AT" "$FINISHED_AT" "$META_JSON" "$COST_SOURCE" <<'PY'
+import json, sys, urllib.request
+(
+  supabase_url, key, agent_id, run_id, task_name, model,
+  input_tokens, output_tokens, estimated_cost, status,
+  started_at, finished_at, meta_json, cost_source
+) = sys.argv[1:]
+
+try:
+  meta = json.loads(meta_json) if meta_json else {}
+except Exception:
+  raise SystemExit("Error: --meta-json inválido")
+
+if not isinstance(meta, dict):
+  raise SystemExit("Error: --meta-json debe ser objeto JSON")
+
+meta["cost_source"] = cost_source or "unknown"
+
+row = {
+  "agent_id": agent_id,
+  "run_id": run_id,
+  "task_name": task_name,
+  "model": model,
+  "input_tokens": int(input_tokens),
+  "output_tokens": int(output_tokens),
+  "estimated_cost_usd": None,
+  "status": status,
+  "started_at": started_at or None,
+  "finished_at": finished_at or None,
+  "meta": meta,
 }
+if estimated_cost != "":
+  row["estimated_cost_usd"] = float(estimated_cost)
 
-COST_FIELD='null'
-if [[ -n "$ESTIMATED_COST_USD" ]]; then
-  COST_FIELD="$ESTIMATED_COST_USD"
-fi
-STARTED_FIELD='null'
-if [[ -n "$STARTED_AT" ]]; then
-  STARTED_FIELD='"'"$(json_escape "$STARTED_AT")"'"'
-fi
-FINISHED_FIELD='null'
-if [[ -n "$FINISHED_AT" ]]; then
-  FINISHED_FIELD='"'"$(json_escape "$FINISHED_AT")"'"'
-fi
-
-payload="[{\"agent_id\":\"$(json_escape "$AGENT_ID")\",\"run_id\":\"$(json_escape "$RUN_ID")\",\"task_name\":\"$(json_escape "$TASK_NAME")\",\"model\":\"$(json_escape "$MODEL")\",\"input_tokens\":$INPUT_TOKENS,\"output_tokens\":$OUTPUT_TOKENS,\"estimated_cost_usd\":$COST_FIELD,\"status\":\"$(json_escape "$STATUS")\",\"started_at\":$STARTED_FIELD,\"finished_at\":$FINISHED_FIELD,\"meta\":$META_JSON}]"
-
-response_file="$(mktemp)"
-http_code="$(curl -sS -o "$response_file" -w '%{http_code}' \
-  -X POST "$SUPABASE_URL/rest/v1/agent_token_usage?on_conflict=agent_id,run_id" \
-  -H "apikey: $SUPABASE_KEY" \
-  -H "Authorization: Bearer $SUPABASE_KEY" \
-  -H "Content-Type: application/json" \
-  -H "Prefer: resolution=merge-duplicates,return=representation" \
-  -d "$payload")"
-
-if [[ "$http_code" -lt 200 || "$http_code" -ge 300 ]]; then
-  echo "Error HTTP $http_code al upsert en agent_token_usage:" >&2
-  cat "$response_file" >&2
-  rm -f "$response_file"
-  exit 1
-fi
-
-cat "$response_file"
-rm -f "$response_file"
+payload = json.dumps([row]).encode("utf-8")
+req = urllib.request.Request(
+  f"{supabase_url}/rest/v1/agent_token_usage?on_conflict=agent_id,run_id",
+  data=payload,
+  method="POST",
+  headers={
+    "apikey": key,
+    "Authorization": f"Bearer {key}",
+    "Content-Type": "application/json",
+    "Prefer": "resolution=merge-duplicates,return=representation",
+  },
+)
+try:
+  with urllib.request.urlopen(req, timeout=30) as resp:
+    print(resp.read().decode("utf-8"))
+except urllib.error.HTTPError as e:
+  body = e.read().decode("utf-8", errors="ignore")
+  print(f"Error HTTP {e.code} al upsert en agent_token_usage:\n{body}", file=sys.stderr)
+  raise
+PY
