@@ -327,6 +327,10 @@
     };
 
     const getRowDate = (r) => new Date(r.action_time || r.created_at || r.updated_at || r.timestamp || 0);
+    const resolveAgentId = (r) => {
+      const id = String(r.agent_id || r.actor || r.user_name || r.user_id || '').trim();
+      return id || 'UNKNOWN';
+    };
 
     const fmtRelative = (input) => {
       if (!input) return '—';
@@ -438,7 +442,7 @@
       const now = Date.now();
       const periodRows = llmRows.filter((r) => {
         const ts = new Date(r.created_at || r.finished_at || 0).getTime();
-        return ts && (now - ts) <= 24 * 60 * 60 * 1000;
+        return ts && ts <= now && ts >= (now - 24 * 60 * 60 * 1000);
       });
 
       if (!periodRows.length) {
@@ -456,7 +460,7 @@
 
       const byAgent = new Map();
       periodRows.forEach((r) => {
-        const agent = r.agent_id || r.actor || r.user_name || 'agente';
+        const agent = resolveAgentId(r);
         if (!byAgent.has(agent)) byAgent.set(agent, { input: 0, output: 0, total: 0 });
         const cur = byAgent.get(agent);
         const input = Number(r.input_tokens || r.input_token || 0);
@@ -471,7 +475,7 @@
       llmAgentBody.innerHTML = ranked.map(([agent, v], i) => `<tr><td>${i + 1}</td><td>${agent}</td><td>${v.input.toLocaleString('es-ES')}</td><td>${v.output.toLocaleString('es-ES')}</td><td><strong>${v.total.toLocaleString('es-ES')}</strong></td></tr>`).join('');
       llmRunsBody.innerHTML = periodRows.slice(0, 8).map((r) => {
         const run = r.run_id || r.id || 'run';
-        const agent = r.agent_id || r.actor || 'agente';
+        const agent = resolveAgentId(r);
         const input = Number(r.input_tokens || r.input_token || 0);
         const output = Number(r.output_tokens || r.output_token || 0);
         const total = Number(r.total_tokens || r.tokens || (input + output) || 0);
