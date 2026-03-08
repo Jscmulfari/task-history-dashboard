@@ -368,6 +368,16 @@
       themeToggle.textContent = theme === 'dark' ? '☀️ Tema claro' : '🌙 Tema oscuro';
     };
 
+    const renderLoadingStates = () => {
+      kpiTotal.textContent = '—';
+      kpiCompleted.textContent = '—';
+      kpiProgress.textContent = '—';
+      kpiErrors.textContent = '—';
+      tbody.innerHTML = '<tr><td colspan="5" class="muted">Cargando datos de activity_log…</td></tr>';
+      timeline.innerHTML = '<article class="event"><div class="time">Ahora</div><p>Cargando actividad reciente…</p></article>';
+      agentRuntimeList.innerHTML = '<article class="agent-row"><div><strong>Cargando</strong><div class="meta">Consultando agent_runtime_status…</div></div><div><span class="badge warn">PENDIENTE</span></div></article>';
+    };
+
     prevBtn.addEventListener('click', () => {
       if (currentPage > 1) {
         currentPage -= 1;
@@ -428,6 +438,7 @@
 
     const savedTheme = localStorage.getItem('dashboard_theme') || 'light';
     applyTheme(savedTheme);
+    renderLoadingStates();
 
     loadActivityLog().catch((err) => {
       console.error(err);
@@ -435,10 +446,10 @@
       tbody.innerHTML = '<tr><td colspan="5" class="muted">Error cargando activity_log desde Supabase.</td></tr>';
       timeline.innerHTML = '<article class="event"><div class="time">Error</div><p>No fue posible recuperar la actividad.</p></article>';
       agentRuntimeList.innerHTML = '<article class="agent-row"><div><strong>Error</strong><div class="meta">No fue posible cargar public.agent_runtime_status</div></div><div><span class="badge offline">OFFLINE</span></div></article>';
-      kpiTotal.textContent = '0';
-      kpiCompleted.textContent = '0';
-      kpiProgress.textContent = '0';
-      kpiErrors.textContent = '0';
+      kpiTotal.textContent = 'ERR';
+      kpiCompleted.textContent = 'ERR';
+      kpiProgress.textContent = 'ERR';
+      kpiErrors.textContent = 'ERR';
       updatePaginationControls();
     });
   </script>
