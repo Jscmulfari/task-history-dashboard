@@ -1,0 +1,389 @@
+<!doctype html>
+<html lang="es" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Task History Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #eef3ff;
+      --bg-grad-top: #f7f9ff;
+      --bg-grad-bottom: #e8efff;
+      --surface: #ffffff;
+      --surface-soft: #f5f8ff;
+      --border: #dbe4f5;
+      --text: #111a2e;
+      --muted: #5f6f87;
+      --primary: #4a63ff;
+      --primary-strong: #2d48df;
+      --ok: #109c5f;
+      --warn: #d08a00;
+      --danger: #dc3d61;
+      --radius: 16px;
+      --shadow: 0 14px 34px rgba(32, 52, 96, 0.10);
+    }
+
+    html[data-theme="dark"] {
+      --bg: #0d1422;
+      --bg-grad-top: #121a2f;
+      --bg-grad-bottom: #0b1120;
+      --surface: #141e31;
+      --surface-soft: #1a263d;
+      --border: #2b3a55;
+      --text: #edf3ff;
+      --muted: #a5b2c8;
+      --primary: #7b96ff;
+      --primary-strong: #9eb3ff;
+      --ok: #50d89c;
+      --warn: #f4c15d;
+      --danger: #ff7b98;
+      --shadow: 0 14px 34px rgba(0, 0, 0, 0.45);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100dvh;
+      background: linear-gradient(180deg, var(--bg-grad-top) 0%, var(--bg-grad-bottom) 100%);
+      color: var(--text);
+      font-family: "Plus Jakarta Sans", Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    }
+
+    .container { width: min(1240px, 94%); margin: 34px auto 52px; }
+    .topbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 26px; }
+    h1 { margin: 0; font-size: clamp(1.45rem, 2.1vw, 2.1rem); letter-spacing: -0.03em; }
+    .subtitle { margin: 8px 0 0; color: var(--muted); font-size: 0.95rem; max-width: 70ch; }
+    .actions { display: flex; gap: 10px; flex-wrap: wrap; }
+
+    button {
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      border-radius: 12px;
+      padding: 10px 14px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: .2s ease;
+    }
+    button:hover:not(:disabled) { transform: translateY(-1px); }
+    button:disabled { opacity: .55; cursor: not-allowed; }
+
+    .theme-toggle {
+      border-color: var(--primary);
+      color: var(--primary);
+      background: color-mix(in srgb, var(--primary) 12%, var(--surface));
+    }
+
+    .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 20px; }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); }
+    .stat { padding: 16px; position: relative; overflow: hidden; }
+    .stat::after { content:''; position:absolute; inset:auto -18px -18px auto; width:64px; height:64px; border-radius:999px; background: color-mix(in srgb, var(--primary) 18%, transparent); filter: blur(2px); opacity:.7; }
+    .stat .label { color: var(--muted); font-size: 0.78rem; margin-bottom: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+    .stat .value { font-size: 1.62rem; font-weight: 800; letter-spacing: -0.02em; }
+
+    .layout { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }
+    .panel { padding: 18px; }
+    .panel h2 { margin: 0 0 14px; font-size: 1rem; }
+    .table-wrap { border: 1px solid var(--border); border-radius: 14px; overflow: auto; background: var(--surface-soft); box-shadow: inset 0 1px 0 rgba(255,255,255,.35); }
+
+    table { width: 100%; min-width: 700px; border-collapse: collapse; font-size: 0.9rem; }
+    thead th {
+      text-align: left;
+      background: color-mix(in srgb, var(--surface-soft) 70%, var(--surface));
+      color: var(--muted);
+      font-size: 0.76rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      padding: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    tbody td { padding: 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    tbody tr:hover { background: color-mix(in srgb, var(--primary) 8%, var(--surface-soft)); }
+
+    .muted { color: var(--muted); font-size: 0.82rem; }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 6px 11px;
+      font-size: 0.71rem;
+      font-weight: 800;
+      letter-spacing: .03em;
+      border: 1px solid transparent;
+      white-space: nowrap;
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,.06);
+    }
+    .ok { color: #0a6d3e; background: #dcfbe9; border-color: #8fe2b8; }
+    .warn { color: #8d5600; background: #fff1d3; border-color: #ffd385; }
+    .danger { color: #96253f; background: #ffe2e8; border-color: #ff9caf; }
+    html[data-theme="dark"] .ok { color: #7effc5; background: rgba(24, 151, 92, .20); border-color: rgba(92, 234, 163, .55); }
+    html[data-theme="dark"] .warn { color: #ffd78c; background: rgba(171, 112, 0, .24); border-color: rgba(255, 196, 87, .5); }
+    html[data-theme="dark"] .danger { color: #ff9cb0; background: rgba(173, 30, 68, .24); border-color: rgba(255, 117, 153, .5); }
+
+    .pager {
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .page-indicator {
+      font-size: .85rem;
+      color: var(--muted);
+      min-width: 82px;
+      text-align: center;
+      font-weight: 600;
+    }
+
+    .timeline { display: grid; gap: 12px; }
+    .event { border: 1px solid var(--border); border-radius: 12px; padding: 12px; background: var(--surface-soft); }
+    .time { font-size: 0.76rem; color: var(--muted); margin-bottom: 6px; font-weight: 600; }
+    .event p { margin: 0; font-size: 0.88rem; line-height: 1.35; }
+
+    @media (max-width: 980px) {
+      .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .layout { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 640px) {
+      .topbar { flex-direction: column; align-items: flex-start; }
+      .stats { grid-template-columns: 1fr; }
+      .container { width: min(96%, 1180px); }
+      table { min-width: 620px; }
+      .pager { justify-content: center; }
+    }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <header class="topbar">
+      <div>
+        <h1>Task History Dashboard</h1>
+        <p class="subtitle">Vista moderna y responsive del histórico de tareas, estado y actividad del sistema.</p>
+      </div>
+      <div class="actions">
+        <button id="theme-toggle" class="theme-toggle" type="button">🌙 Tema oscuro</button>
+      </div>
+    </header>
+
+    <section class="stats">
+      <article class="card stat"><div class="label">Tareas totales</div><div class="value" id="kpi-total">—</div></article>
+      <article class="card stat"><div class="label">Completadas</div><div class="value" id="kpi-completed">—</div></article>
+      <article class="card stat"><div class="label">En progreso</div><div class="value" id="kpi-progress">—</div></article>
+      <article class="card stat"><div class="label">Errores</div><div class="value" id="kpi-errors">—</div></article>
+    </section>
+
+    <section class="layout">
+      <article class="card panel">
+        <h2>Historial reciente</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Actor</th><th>Action Name</th><th>Action Time</th><th>Status</th><th>Details</th>
+              </tr>
+            </thead>
+            <tbody id="activity-body">
+              <tr><td colspan="5" class="muted">Cargando datos de activity_log…</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="pager">
+          <button id="prev-page" type="button">Anterior</button>
+          <div id="page-indicator" class="page-indicator">Página 1/1</div>
+          <button id="next-page" type="button">Siguiente</button>
+        </div>
+      </article>
+
+      <aside class="card panel">
+        <h2>Actividad reciente</h2>
+        <div class="timeline" id="activity-timeline">
+          <article class="event"><div class="time">Ahora</div><p>Esperando datos reales desde Supabase.</p></article>
+        </div>
+      </aside>
+    </section>
+  </main>
+
+  <script>
+    const DEFAULT_SUPABASE_URL = 'https://jnstqvnyvepwlwtscorn.supabase.co';
+    const DEFAULT_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impuc3Rxdm55dmVwd2x3dHNjb3JuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI5MzAwNjIsImV4cCI6MjA4ODUwNjA2Mn0.Uf041tC2PbGMcTr2TzItaFbnCclGK-sa4euHG_jQuSc';
+    const SUPABASE_URL = window.SUPABASE_URL || window.SUPABASE_REST_URL || DEFAULT_SUPABASE_URL;
+    const SUPABASE_KEY = window.SUPABASE_ANON_KEY || window.SUPABASE_KEY || DEFAULT_SUPABASE_ANON_KEY;
+
+    const PAGE_SIZE = 20;
+    let allRows = [];
+    let currentPage = 1;
+
+    const kpiTotal = document.getElementById('kpi-total');
+    const kpiCompleted = document.getElementById('kpi-completed');
+    const kpiProgress = document.getElementById('kpi-progress');
+    const kpiErrors = document.getElementById('kpi-errors');
+    const tbody = document.getElementById('activity-body');
+    const timeline = document.getElementById('activity-timeline');
+    const prevBtn = document.getElementById('prev-page');
+    const nextBtn = document.getElementById('next-page');
+    const pageIndicator = document.getElementById('page-indicator');
+    const themeToggle = document.getElementById('theme-toggle');
+
+    const normalizeStatus = (raw) => {
+      const s = String(raw || '').trim().toLowerCase().replace(/[_-]+/g, ' ');
+      if (['en progreso', 'activo', 'running', 'in progress', 'in_progress', 'processing', 'pending', 'queued'].includes(s)) {
+        return { label: 'EN PROGRESO', className: 'warn' };
+      }
+      if (['hecho', 'completado', 'completada', 'done', 'completed', 'success', 'ok', 'finished'].includes(s)) {
+        return { label: 'COMPLETADA', className: 'ok' };
+      }
+      if (['error', 'fallido', 'failed', 'failure', 'cancelado', 'cancelled'].includes(s)) {
+        return { label: 'ERROR', className: 'danger' };
+      }
+      return { label: s ? s.toUpperCase() : 'EN PROGRESO', className: 'warn' };
+    };
+
+    const fmtRelative = (input) => {
+      if (!input) return '—';
+      const d = new Date(input);
+      if (Number.isNaN(d.getTime())) return '—';
+      const diff = Math.max(0, Date.now() - d.getTime());
+      const m = Math.floor(diff / 60000);
+      if (m < 1) return 'hace segundos';
+      if (m < 60) return `hace ${m} min`;
+      const h = Math.floor(m / 60);
+      if (h < 24) return `hace ${h} h`;
+      return `hace ${Math.floor(h / 24)} d`;
+    };
+
+    const fmtActionTime = (input) => {
+      if (!input) return '—';
+      const d = new Date(input);
+      if (Number.isNaN(d.getTime())) return '—';
+      return d.toLocaleString('es-ES', {
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit'
+      });
+    };
+
+    const updatePaginationControls = () => {
+      const totalPages = Math.max(1, Math.ceil(allRows.length / PAGE_SIZE));
+      if (currentPage > totalPages) currentPage = totalPages;
+      pageIndicator.textContent = `Página ${currentPage}/${totalPages}`;
+      prevBtn.disabled = currentPage <= 1;
+      nextBtn.disabled = currentPage >= totalPages;
+    };
+
+    const renderTable = () => {
+      if (!allRows.length) {
+        tbody.innerHTML = '<tr><td colspan="5" class="muted">Sin registros en activity_log.</td></tr>';
+        updatePaginationControls();
+        return;
+      }
+
+      const start = (currentPage - 1) * PAGE_SIZE;
+      const pageRows = allRows.slice(start, start + PAGE_SIZE);
+
+      tbody.innerHTML = pageRows.map((r) => {
+        const status = normalizeStatus(r.status || r.state || r.result);
+        const actor = r.actor || r.user_name || r.user_id || r.created_by || '—';
+        const actionName = r.action_name || r.action || r.task_name || r.name || '—';
+        const actionTime = r.action_time || r.created_at || r.updated_at || r.timestamp;
+        const details = r.details || r.description || r.message || r.source || '—';
+
+        return `
+          <tr>
+            <td>${actor}</td>
+            <td>${actionName}</td>
+            <td>${fmtActionTime(actionTime)}<br /><span class="muted">${fmtRelative(actionTime)}</span></td>
+            <td><span class="badge ${status.className}">${status.label}</span></td>
+            <td>${details}</td>
+          </tr>`;
+      }).join('');
+
+      updatePaginationControls();
+    };
+
+    const renderTimeline = () => {
+      if (!allRows.length) {
+        timeline.innerHTML = '<article class="event"><div class="time">Ahora</div><p>Sin actividad reciente.</p></article>';
+        return;
+      }
+
+      timeline.innerHTML = allRows.slice(0, 6).map((r) => {
+        const when = r.action_time || r.created_at || r.updated_at || r.timestamp;
+        const eventText = r.details || r.message || r.action_name || r.action || 'Actividad registrada';
+        return `<article class="event"><div class="time">${fmtRelative(when)}</div><p>${eventText}</p></article>`;
+      }).join('');
+    };
+
+    const renderKpis = () => {
+      const normalized = allRows.map(r => normalizeStatus(r.status || r.state || r.result).label);
+      kpiTotal.textContent = allRows.length.toLocaleString('es-ES');
+      kpiCompleted.textContent = normalized.filter(s => s === 'COMPLETADA').length.toLocaleString('es-ES');
+      kpiProgress.textContent = normalized.filter(s => s === 'EN PROGRESO').length.toLocaleString('es-ES');
+      kpiErrors.textContent = normalized.filter(s => s === 'ERROR').length.toLocaleString('es-ES');
+    };
+
+    const applyTheme = (theme) => {
+      document.documentElement.setAttribute('data-theme', theme);
+      localStorage.setItem('dashboard_theme', theme);
+      themeToggle.textContent = theme === 'dark' ? '☀️ Tema claro' : '🌙 Tema oscuro';
+    };
+
+    prevBtn.addEventListener('click', () => {
+      if (currentPage > 1) {
+        currentPage -= 1;
+        renderTable();
+      }
+    });
+
+    nextBtn.addEventListener('click', () => {
+      const totalPages = Math.max(1, Math.ceil(allRows.length / PAGE_SIZE));
+      if (currentPage < totalPages) {
+        currentPage += 1;
+        renderTable();
+      }
+    });
+
+    themeToggle.addEventListener('click', () => {
+      const current = document.documentElement.getAttribute('data-theme') || 'light';
+      applyTheme(current === 'dark' ? 'light' : 'dark');
+    });
+
+    async function loadActivityLog() {
+      const endpoint = `${SUPABASE_URL}/rest/v1/activity_log?select=*&order=created_at.desc&limit=500`;
+      const resp = await fetch(endpoint, {
+        headers: {
+          apikey: SUPABASE_KEY,
+          Authorization: `Bearer ${SUPABASE_KEY}`,
+          Accept: 'application/json'
+        }
+      });
+
+      if (!resp.ok) throw new Error(`Supabase error ${resp.status}`);
+      allRows = await resp.json();
+      currentPage = 1;
+
+      renderKpis();
+      renderTable();
+      renderTimeline();
+    }
+
+    const savedTheme = localStorage.getItem('dashboard_theme') || 'light';
+    applyTheme(savedTheme);
+
+    loadActivityLog().catch((err) => {
+      console.error(err);
+      allRows = [];
+      tbody.innerHTML = '<tr><td colspan="5" class="muted">Error cargando activity_log desde Supabase.</td></tr>';
+      timeline.innerHTML = '<article class="event"><div class="time">Error</div><p>No fue posible recuperar la actividad.</p></article>';
+      kpiTotal.textContent = '0';
+      kpiCompleted.textContent = '0';
+      kpiProgress.textContent = '0';
+      kpiErrors.textContent = '0';
+      updatePaginationControls();
+    });
+  </script>
+</body>
+</html>
