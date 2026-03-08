@@ -443,7 +443,7 @@
       }
 
       const totalTokens = llmRows.reduce((acc, r) => acc + Number(r.total_tokens || r.tokens || 0), 0);
-      const totalCost = llmRows.reduce((acc, r) => acc + Number(r.cost_usd || r.cost || 0), 0);
+      const totalCost = llmRows.reduce((acc, r) => acc + Number(r.estimated_cost_usd || r.cost_usd || r.cost || 0), 0);
       llmKpiTokens.textContent = totalTokens.toLocaleString('es-ES');
       llmKpiCost.textContent = `$${totalCost.toFixed(4)}`;
 
@@ -453,7 +453,7 @@
         if (!byAgent.has(agent)) byAgent.set(agent, { tokens: 0, cost: 0 });
         const cur = byAgent.get(agent);
         cur.tokens += Number(r.total_tokens || r.tokens || 0);
-        cur.cost += Number(r.cost_usd || r.cost || 0);
+        cur.cost += Number(r.estimated_cost_usd || r.cost_usd || r.cost || 0);
       });
 
       llmAgentBody.innerHTML = [...byAgent.entries()].map(([agent, v]) => `<tr><td>${agent}</td><td>${v.tokens.toLocaleString('es-ES')}</td><td>$${v.cost.toFixed(4)}</td></tr>`).join('');
@@ -461,7 +461,7 @@
         const run = r.run_id || r.id || 'run';
         const agent = r.agent_id || r.actor || 'agente';
         const t = Number(r.total_tokens || r.tokens || 0);
-        const c = Number(r.cost_usd || r.cost || 0);
+        const c = Number(r.estimated_cost_usd || r.cost_usd || r.cost || 0);
         return `<tr><td>${run}</td><td>${agent}</td><td>${t.toLocaleString('es-ES')}</td><td>$${c.toFixed(4)}</td></tr>`;
       }).join('');
     };
@@ -574,14 +574,14 @@
       agentRows = runtimeData.filter((r) => { const id = String(r.agent_id || '').trim(); if (!id || seen.has(id)) return false; seen.add(id); return true; });
 
       let llmData = [];
-      const llmEndpoint = `${SUPABASE_URL}/rest/v1/llm_token_consumption?select=run_id,agent_id,total_tokens,cost_usd,created_at&order=created_at.desc&limit=100`;
+      const llmEndpoint = `${SUPABASE_URL}/rest/v1/agent_token_usage?select=run_id,agent_id,total_tokens,estimated_cost_usd,created_at&order=created_at.desc&limit=100`;
       const llmResp = await fetch(llmEndpoint, { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, Accept: 'application/json' } });
       if (llmResp.ok) {
         llmData = await llmResp.json();
       } else {
         llmData = allRows
           .filter((r) => Number(r.total_tokens || r.tokens || 0) > 0 || Number(r.cost_usd || r.cost || 0) > 0)
-          .map((r) => ({ run_id: r.run_id || r.id, agent_id: r.actor || r.user_name, total_tokens: r.total_tokens || r.tokens || 0, cost_usd: r.cost_usd || r.cost || 0, created_at: r.action_time || r.created_at || r.updated_at }));
+          .map((r) => ({ run_id: r.run_id || r.id, agent_id: r.actor || r.user_name, total_tokens: r.total_tokens || r.tokens || 0, estimated_cost_usd: r.estimated_cost_usd || r.cost_usd || r.cost || 0, created_at: r.action_time || r.created_at || r.updated_at }));
       }
       llmRows = llmData;
 
