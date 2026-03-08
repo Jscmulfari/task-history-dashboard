@@ -326,6 +326,11 @@
     };
 
     const getRowDate = (r) => new Date(r.action_time || r.created_at || r.updated_at || r.timestamp || 0);
+    const resolveAgentId = (r) => {
+      const id = String(r.agent_id || r.actor || r.user_name || r.user_id || '').trim();
+      if (!id) return 'UNKNOWN';
+      return id.toLowerCase() === 'main' ? 'UNKNOWN' : id;
+    };
 
     const fmtRelative = (input) => {
       if (!input) return '—';
